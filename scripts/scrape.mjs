@@ -4,7 +4,7 @@ import * as cheerio from 'cheerio';
 import fs from 'node:fs/promises';
 
 const START = (process.env.START_URLS || 'https://ooredoo.ps').split(',').map(s => s.trim()).filter(Boolean);
-const MAX_PAGES = Number(process.env.MAX_PAGES) || 120;
+const MAX_PAGES = Number(process.env.MAX_PAGES) || 200;
 const DELAY_MS = Number(process.env.DELAY_MS) || 800;
 const USE_BROWSER = process.env.USE_BROWSER === '1';
 const OUT = 'public/data/ooredoo.json';
@@ -103,10 +103,12 @@ async function main() {
   } catch {}
 
   const seen = new Set(), pages = [];
+  let deviceCount = 0;
   while (queue.length && pages.length < MAX_PAGES) {
     const url = queue.shift();
     if (seen.has(url)) continue;
     seen.add(url);
+    if (/\/handsets\/devices\//.test(url) && ++deviceCount > 15) continue;
     if (!allowedByRobots(robots, url)) { console.log('robots يمنع:', url); continue; }
     try {
       const { title, lines, links } = extract(await getHtml(url), url);
