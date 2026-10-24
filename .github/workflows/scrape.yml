@@ -1,0 +1,29 @@
+name: تحديث بيانات أوريدو
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: تثبيت المتصفح الآلي (اختياري)
+        if: ${{ vars.USE_BROWSER == '1' }}
+        run: npx playwright install --with-deps chromium
+      - run: node scripts/scrape.mjs
+        env:
+          USE_BROWSER: ${{ vars.USE_BROWSER }}
+          START_URLS: ${{ vars.START_URLS }}
+      - name: حفظ التغييرات
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add public/data/ooredoo.json
+          git diff --staged --quiet || (git commit -m "تحديث بيانات الموقع" && git push)
