@@ -4,8 +4,8 @@ import * as cheerio from 'cheerio';
 import fs from 'node:fs/promises';
 
 const START = (process.env.START_URLS || 'https://ooredoo.ps').split(',').map(s => s.trim()).filter(Boolean);
-const MAX_PAGES = Number(process.env.MAX_PAGES) || 200;
-const DELAY_MS = Number(process.env.DELAY_MS) || 800;
+const MAX_PAGES = Number(process.env.MAX_PAGES) || 500;
+const DELAY_MS = Number(process.env.DELAY_MS) || 500;
 const USE_BROWSER = process.env.USE_BROWSER === '1';
 const OUT = 'public/data/ooredoo.json';
 const UA = 'OoredooInfoBot/1.0 (unofficial personal project)';
@@ -102,19 +102,28 @@ async function main() {
     if (sm.ok) for (const m of (await sm.text()).matchAll(/<loc>([^<]+)<\/loc>/g)) { const c = clean(m[1], origin); if (c) queue.push(c); }
   } catch {}
 
-  const seen = new Set(), pages = [];
-  let deviceCount = 0;
-  while (queue.length && pages.length < MAX_PAGES) {
-    const url = queue.shift();
+  // قائمتان: روابط مهمة (باقات، خدمات، أسئلة، فروع...) تُقرأ أولًا، وبقية الروابط بعدها
+  const PRIORITY = /باقات|باقة|اسعار|أسعار|عروض|خدمات|الخدمات|أفراد|افراد|شركات|دعم|مساعدة|الاسئلة|الأسئلة|فروع|مراكز|شحن|فاتورة|انترنت|إنترنت|packages|plans|offers|services|internet|prepaid|postpaid|faq|support|branches|recharge|bill/i;
+  const SECTION_CAP = Number(process.env.SECTION_CAP) || 30; // أقصى عدد صفحات من كل قسم حتى لا يطغى قسم واحد
+  const section = u => { try { return decodeURIComponent(new URL(u).pathname).split('/').filter(Boolean).slice(0, 2).join('/'); } catch { return ''; } };
+  const low = [];
+  const addLink = l => { if (seen.has(l)) return; (PRIORITY.test(safeDecode(l)) ? queue : low).push(l); };
+  const safeDecode = u => { try { return decodeURIComponent(u); } catch { return u; } };
+
+  const seen = new Set(), pages = [], perSection = new Map();
+  while ((queue.length || low.length) && pages.length < MAX_PAGES) {
+    const url = queue.length ? queue.shift() : low.shift();
     if (seen.has(url)) continue;
     seen.add(url);
-    if (/\/handsets\/devices\//.test(url) && ++deviceCount > 15) continue;
+    const sec = section(url);
+    if ((perSection.get(sec) || 0) >= SECTION_CAP) continue;
     if (!allowedByRobots(robots, url)) { console.log('robots يمنع:', url); continue; }
     try {
       const { title, lines, links } = extract(await getHtml(url), url);
+      perSection.set(sec, (perSection.get(sec) || 0) + 1);
       pages.push({ url, title, lines });
-      for (const l of links) if (!seen.has(l)) queue.push(l);
-      console.log(`✔ ${url} (${lines.length} سطر)`);
+      for (const l of links) addLink(l);
+      console.log(`✔ ${safeDecode(url)} (${lines.length} سطر)`);
     } catch (e) { console.log(`✘ ${url}: ${e.message}`); }
     await sleep(DELAY_MS);
   }
